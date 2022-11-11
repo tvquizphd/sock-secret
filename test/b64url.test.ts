@@ -7,9 +7,6 @@ const test_basic = (expected: string) => {
 };
 
 describe("Base 64 conversion round trip", () => {
-  const ok = "Text encoded/decoded properly";
-  const error = "Error encoding/decoding text";
-
   it("Basic conversion roundtrip", () => {
     const expected = '#data.ev=:ACID';
     const passed = test_basic(expected);

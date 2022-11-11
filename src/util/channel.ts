@@ -11,6 +11,7 @@ export type ChannelOptions = {
 type ItemObject = Record<string, Item>;
 type Item = { k: string, v: string };
 type Resolve = (s: string) => void;
+type EFn = (a: Error) => void;
 type Fn = (a: TreeAny) => void;
 
 const serialize = (data: TreeAny): string => {
@@ -42,27 +43,28 @@ class SecretChannel {
   hasResponse(k: string) {
     return k in this.itemObject;
   }
-  listenForKey(k: string, res: Fn) {
-    const r = (s: string) => res(deserialize(s));
-    this.awaitItem(k, r);
+  waiter(k: string) {
+    return new Promise((resolve: Fn, reject: EFn) => {
+      console.log(`Awaiting ${k}`);
+      if (this.waitMap.has(k)) {
+        reject(new Error(`Repeated ${k} handler`));
+      }
+      const fn: Resolve = (s) => {
+        resolve(deserialize(s));
+      };
+      this.waitMap.set(k, fn);
+    })
   }
-  receiveKey(k: string, res: Fn) {
-    const r = (s: string) => res(deserialize(s));
-    this.resolver(k, r);
+  sendToClient(name: string, a: TreeAny) {
+    console.log(name, a); //TODO
+    return Promise.resolve();
   }
-  sendMail(name: string, a: TreeAny) {
+  sendToServer(name: string, a: TreeAny) {
     const { git, env } = this;
     const secret = serialize(a);
     setSecret({ name, secret, git, env });
   }
-  awaitItem(k: string, resolve: Resolve) {
-    console.log(`Awaiting ${k}`);
-    if (this.waitMap.has(k)) {
-      throw new Error(`Repeated ${k} handler`);
-    }
-    this.waitMap.set(k, resolve);
-  }
-  resolver(k: string, resolve: Resolve) {
+  access(k: string) {
     const itemObject = this.itemObject;
     if (k in itemObject) {
       const { v } = itemObject[k];
@@ -70,7 +72,7 @@ class SecretChannel {
       if (this.waitMap.has(k)) {
         this.waitMap.delete(k);
       }
-      resolve(v);
+      return deserialize(v);
     }
   }
 }
