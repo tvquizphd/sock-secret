@@ -7,15 +7,18 @@ describe("Write Secrets", () => {
   const env = process.env.GITHUB_ENV || "";
   const repo = process.env.GITHUB_REPO || "";
   const owner = process.env.GITHUB_USER || "";
-  const token = process.env.GITHUB_TOKEN || "";
-  const core_inputs = { env, repo, owner, token };
-  console.log(core_inputs) // TODO;
+  const owner_token = process.env.GITHUB_TOKEN || "";
+  const core_inputs = { env, repo, owner, owner_token };
+  const needs = [env, repo, owner, owner_token];
   it("Validate Input Environment", async () => {
-    const passed = [env, repo, owner, token].every(v => v);
+    const passed = needs.every(v => v);
     expect(passed).toEqual(true);
   })
   it("Create Environment Secret", async () => {
-    const sock = toSockSecret({ env });
+    const git = { repo, owner, owner_token };
+    const sock = await toSockSecret({ env, git });
+    const secret = { foo: "bar" };
+    sock.give(undefined, "name", secret);
     const passed = sock != null;
     expect(passed).toEqual(true);
   })

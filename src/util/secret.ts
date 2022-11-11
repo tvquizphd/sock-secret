@@ -10,7 +10,14 @@ interface Sodiumize {
   (t: string, i: string, e: string, v: string): Promise<Sodiumized>;
 }
 
+export type Git = {
+  repo: string,
+  owner: string,
+  owner_token: string
+}
+
 type SecretInputs = {
+  git: Git,
   env: string,
   name: string,
   secret: string
@@ -38,12 +45,7 @@ const sodiumize: Sodiumize = async (token, id, env, value) => {
 }
 
 const setSecret: SetSecret = async (inputs) => {
-  const { name, env, secret } = inputs;
-  const git = {
-    owner: "tvquizphd",
-    repo: "public-quiz-device",
-    owner_token: process.argv[2] || ""
-  };
+  const { name, git, env, secret } = inputs;
   const get_api = `/repos/${git.owner}/${git.repo}`;
   const authorization = `token ${git.owner_token}`;
   const get_r = await request(`GET ${get_api}`, {

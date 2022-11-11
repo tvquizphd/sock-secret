@@ -2,9 +2,11 @@ import { setSecret } from "./secret";
 import { toB64urlQuery, fromB64urlQuery } from "../b64url/index";
 
 import type { TreeAny } from "../b64url/index";
+import type { Git } from "../util/secret";
 
 export type ChannelOptions = {
-  env: string
+  env: string,
+  git: Git
 };
 type ItemObject = Record<string, Item>;
 type Item = { k: string, v: string };
@@ -24,10 +26,12 @@ class SecretChannel {
   waitMap: Map<string, Resolve>;
   items: Item[];
   env: string;
+  git: Git;
 
   constructor(opts: ChannelOptions) {
     this.waitMap = new Map();
     this.env = opts.env;
+    this.git = opts.git;
     this.items = [];
   }
   get itemObject(): ItemObject {
@@ -46,10 +50,10 @@ class SecretChannel {
     const r = (s: string) => res(deserialize(s));
     this.resolver(k, r);
   }
-  sendMail(k: string, a: TreeAny) {
-    const { env } = this;
-    const v = serialize(a);
-    setSecret({ name: k, secret: v, env });
+  sendMail(name: string, a: TreeAny) {
+    const { git, env } = this;
+    const secret = serialize(a);
+    setSecret({ name, secret, git, env });
   }
   awaitItem(k: string, resolve: Resolve) {
     console.log(`Awaiting ${k}`);
