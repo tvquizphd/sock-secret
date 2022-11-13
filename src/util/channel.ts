@@ -1,17 +1,19 @@
 import { setSecret } from "./secret";
-import { toB64urlQuery, fromB64urlQuery } from "../b64url/index";
+import { 
+  isObj, toB64urlQuery, fromB64urlQuery
+} from "../b64url/index";
 
-import type { TreeAny } from "../b64url/index";
+import type {
+  NodeAny, TreeAny
+} from "../b64url/index";
 import type { Git } from "../util/secret";
-
-type Obj<V> = { [k: string]: V };
 
 export type ClientOpts = {
   env: string,
   git: Git
 };
 export type ServerOpts = ClientOpts & {
-  secrets?: Obj<string>,
+  secrets?: string,
 }
 
 type EFn = (a: Error) => void;
@@ -19,7 +21,21 @@ type Fn = (s: TreeAny) => void;
 type Choice = { yes: Fn, no: EFn };
 type INS = Map<string, TreeAny>;
 type KV = [string, TreeAny];
-type KS = [string, string];
+type KN = [string, NodeAny];
+
+const isTree = (n: NodeAny): n is TreeAny => {
+  return isObj(n);
+}
+
+const parseTree = (s: string): KV[] => {
+  const o: KV[]  = [];
+  const i = deserialize(s);
+  if (!isTree(i)) return o;
+  Object.entries(i).forEach(([k,v]: KN) => {
+    if (isTree(v)) o.push([k, v]);
+  });
+  return o;
+}
 
 const serialize = (data: TreeAny): string => {
   return toB64urlQuery(data);
@@ -45,17 +61,17 @@ class ClientChannel {
     this.done = false;
     this.seek();
   }
-  async listPublic(): Promise<KS[]> {
-    return []; //TODO
+  async listPublic(): Promise<string> {
+    return ""; //TODO
   }
   async seek() {
     while (!this.done) {
-      const items = await this.listPublic();
-      for (const [k, s] of items) {
-        const v = deserialize(s);
+      const str = await this.listPublic();
+      const tree = parseTree(str);
+      tree.forEach(([k,v]: KV) => {
         this.ins.set(k, v);
         this.choose(k, v);
-      }
+      });
     }
   }
   has(k: string): boolean {
@@ -115,11 +131,8 @@ class ServerChannel {
   outs: INS;
 
   constructor(opts: ServerOpts) {
-    const ins = Object.entries(opts.secrets || {});
-    const ino: KV[] = ins.map(([k, v]) => {
-      return [k, deserialize(v)] as KV;
-    }).filter((kv: KV) => kv[1]);
-    this.ins = new Map(ino);
+    const sec = opts.secrets || "";
+    this.ins = new Map(parseTree(sec));
     this.outs = new Map();
     this.env = opts.env;
     this.git = opts.git;
