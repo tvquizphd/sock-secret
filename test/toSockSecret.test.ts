@@ -1,4 +1,4 @@
-import { toSockSecret } from "../src/index";
+import { toSockClient } from "../src/index";
 import * as dotenv from "dotenv";
 
 describe("Write Secrets", () => {
@@ -14,9 +14,10 @@ describe("Write Secrets", () => {
   })
   it("Create Environment Secret", async () => {
     const git = { repo, owner, owner_token };
-    const sock = await toSockSecret({ env, git });
+    const sock = await toSockClient({ env, git });
     const secret = { foo: "bar" };
-    sock.client.give(undefined, "name", secret);
+    sock.give(undefined, "name", secret);
+    await sock.quit();
     const passed = sock != null;
     expect(passed).toEqual(true);
   })
