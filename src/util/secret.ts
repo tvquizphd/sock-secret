@@ -15,15 +15,25 @@ export type Git = {
   owner: string,
   owner_token: string
 }
-
 type SecretInputs = {
   git: Git,
-  env: string,
+  env: string
+}
+type SetSecretInputs = SecretInputs & {
   name: string,
   secret: string
 }
+type HasName = {
+  name: string
+}
+interface ToRepoId {
+  (i: Git): Promise<string>;
+}
 interface SetSecret {
-  (i: SecretInputs): Promise<void>;
+  (i: SetSecretInputs): Promise<void>;
+}
+interface ListSecrets {
+  (i: SecretInputs): Promise<string[]>;
 }
 
 const sodiumize: Sodiumize = async (token, id, env, value) => {
@@ -44,24 +54,41 @@ const sodiumize: Sodiumize = async (token, id, env, value) => {
   return { key_id, ev };
 }
 
-const setSecret: SetSecret = async (inputs) => {
-  const { name, git, env, secret } = inputs;
+const toRepoId: ToRepoId = async (git) => {
   const get_api = `/repos/${git.owner}/${git.repo}`;
   const authorization = `token ${git.owner_token}`;
   const get_r = await request(`GET ${get_api}`, {
     headers: { authorization }
   });
-  const id = `${get_r.data.id}`;
+  return `${get_r.data.id}`;
+}
+
+const listSecrets: ListSecrets = async (inputs) => {
+  const { git, env } = inputs;
+  const id = await toRepoId(git);
+  const authorization = `token ${git.owner_token}`;
+  const api_root = `/repositories/${id}/environments/${env}`;
+  const api_url = `${api_root}/secrets?100`;
+  const { data } = await request(`GET ${api_url}`, {
+    headers: { authorization }
+  });
+  return data.secrets.map((s: HasName) => {
+    return s.name;
+  });
+}
+
+const setSecret: SetSecret = async (inputs) => {
+  const { name, git, env, secret } = inputs;
+  const id = await toRepoId(git);
+  const authorization = `token ${git.owner_token}`;
   const e_secret = await sodiumize(git.owner_token, id, env, secret);
   const api_root = `/repositories/${id}/environments/${env}`;
   const api_url = `${api_root}/secrets/${name}`;
   await request(`PUT ${api_url}`, {
-    repo: git.repo,
-    owner: git.owner,
     key_id: e_secret.key_id,
     encrypted_value: e_secret.ev,
     headers: { authorization }
   });
 }
 
-export { setSecret }
+export { listSecrets, setSecret }

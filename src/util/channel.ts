@@ -1,4 +1,4 @@
-import { setSecret } from "./secret";
+import { listSecrets, setSecret } from "./secret";
 import { 
   isObj, toB64urlQuery, fromB64urlQuery
 } from "../b64url/index";
@@ -141,13 +141,12 @@ class ServerChannel {
     this.env = opts.env;
     this.git = opts.git;
   }
-  async listSecrets(): Promise<string[]> {
-    return []; //TODO
-  }
   async find(ends: string[]) {
     const remains = new Set(ends);
+    const { git, env } = this;
+    const opts = { git, env };
     while (remains.size > 0) {
-      const items = await this.listSecrets();
+      const items = await listSecrets(opts);
       for (const k of items) {
         remains.delete(k);
       }
