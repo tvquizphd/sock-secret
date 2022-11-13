@@ -8,12 +8,16 @@ import type {
 } from "../b64url/index";
 import type { Git } from "../util/secret";
 
-export type ClientOpts = {
+type Opts = {
   env: string,
   git: Git
 };
-export type ServerOpts = ClientOpts & {
-  secrets?: string,
+type Seeker = () => Promise<string>;
+export type ClientOpts = Opts & {
+  seeker?: Seeker
+};
+export type ServerOpts = Opts & {
+  secrets?: string
 }
 
 type EFn = (a: Error) => void;
@@ -48,25 +52,25 @@ const deserialize = (str: string): TreeAny => {
 class ClientChannel {
 
   waiters: Map<string, Choice>;
+  seeker: Seeker;
   done: boolean;
   env: string;
   git: Git;
   ins: INS;
 
   constructor(opts: ClientOpts) {
-    this.ins = new Map();
+    const no: Seeker = async () => "";
+    this.seeker = opts.seeker || no;
     this.waiters = new Map();
+    this.ins = new Map();
     this.env = opts.env;
     this.git = opts.git;
     this.done = false;
     this.seek();
   }
-  async listPublic(): Promise<string> {
-    return ""; //TODO
-  }
   async seek() {
     while (!this.done) {
-      const str = await this.listPublic();
+      const str = await this.seeker();
       const tree = parseTree(str);
       tree.forEach(([k,v]: KV) => {
         this.ins.set(k, v);
