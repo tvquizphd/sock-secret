@@ -1,0 +1,11 @@
+# dependencies
+/node_modules
+/coverage
+/.pnp
+.pnp.js
+
+# misc
+.DS_Store
+*.pem
+*.swp
+*.swo
