@@ -1,2 +1,12 @@
 export * from "./toSockSecret";
 export * from "./b64url/index";
+import type { Sock as S } from "./toSockSecret";
+import type { SockClient as SC } from "./toSockSecret";
+import type { SockServer as SS } from "./toSockSecret";
+import type { ToSockClient as TSC } from "./toSockSecret";
+import type { ToSockServer as TSS } from "./toSockSecret";
+export type Sock = S;
+export type SockClient = SC;
+export type SockServer = SS;
+export type ToSockClient = TSC;
+export type ToSockServer = TSS;
