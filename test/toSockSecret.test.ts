@@ -1,6 +1,8 @@
 import { toSockClient } from "../src/index";
 import * as dotenv from "dotenv";
 
+import type { NamedSecret } from "../src/index";
+
 describe("Write Secrets", () => {
   dotenv.config();
   const env = process.env.GITHUB_ENV || "";
@@ -20,5 +22,19 @@ describe("Write Secrets", () => {
     await sock.quit();
     const passed = sock != null;
     expect(passed).toEqual(true);
+  })
+  it("Create Local Secret", async () => {
+    const git = { repo, owner, owner_token };
+    let result = "";
+    const sender = ({name, secret}: NamedSecret) => {  
+      result = `${name} ${secret}`;
+    }
+    const sock = await toSockClient({ env, git, sender });
+    const secret = { foo: "bar" };
+    sock.give(undefined, "name", secret);
+    await sock.quit();
+    const passed = sock != null;
+    expect(passed).toEqual(true);
+    expect(result).toEqual("noop__name #foo=bar");
   })
 });

@@ -6,17 +6,20 @@ import {
 import type {
   NodeAny, TreeAny
 } from "../b64url/index";
-import type { Git } from "../util/secret";
+import type { NamedSecret, Git, Lister } from "./secret";
 
 type Opts = {
   env: string,
   git: Git
 };
+type Sender = (ns: NamedSecret) => unknown;
 type Seeker = () => Promise<string>;
 export type ClientOpts = Opts & {
+  sender?: Sender | null,
   seeker?: Seeker
 };
 export type ServerOpts = Opts & {
+  lister?: Lister | null,
   secrets?: string
 }
 
@@ -52,6 +55,7 @@ const deserialize = (str: string): TreeAny => {
 class ClientChannel {
 
   waiters: Map<string, Choice>;
+  sender: Sender | null;
   seeker: Seeker;
   done: boolean;
   env: string;
@@ -60,6 +64,7 @@ class ClientChannel {
 
   constructor(opts: ClientOpts) {
     const no: Seeker = async () => "";
+    this.sender = opts.sender || null;
     this.seeker = opts.seeker || no;
     this.waiters = new Map();
     this.ins = new Map();
@@ -69,6 +74,7 @@ class ClientChannel {
     this.seek();
   }
   async seek() {
+    const dt = 100; //TODO
     while (!this.done) {
       const str = await this.seeker();
       const tree = parseTree(str);
@@ -76,6 +82,7 @@ class ClientChannel {
         this.ins.set(k, v);
         this.choose(k, v);
       });
+      await new Promise(r => setTimeout(r, dt));
     }
   }
   has(k: string): boolean {
@@ -98,7 +105,12 @@ class ClientChannel {
   sendToServer(name: string, a: TreeAny) {
     const { git, env } = this;
     const secret = serialize(a);
-    setSecret({ name, secret, git, env });
+    if (this.sender !== null) {
+      this.sender({ name, secret });
+    }
+    else {
+      setSecret({ name, secret, git, env });
+    }
   }
   choose(k: string, value?: TreeAny) {
     const use = this.waiters.get(k);
@@ -129,6 +141,7 @@ class ClientChannel {
 
 class ServerChannel {
 
+  lister: Lister | null;
   env: string;
   git: Git;
   ins: INS;
@@ -136,6 +149,7 @@ class ServerChannel {
 
   constructor(opts: ServerOpts) {
     const sec = opts.secrets || "";
+    this.lister = opts.lister || null;
     this.ins = new Map(parseTree(sec));
     this.outs = new Map();
     this.env = opts.env;
@@ -145,11 +159,19 @@ class ServerChannel {
     const remains = new Set(ends);
     const { git, env } = this;
     const opts = { git, env };
+    const lister = async () => {
+      if (this.lister !== null) {
+        return await this.lister();
+      }
+      return await listSecrets(opts);
+    }
+    const dt = 100; //TODO
     while (remains.size > 0) {
-      const items = await listSecrets(opts);
+      const items = await lister();
       for (const k of items) {
         remains.delete(k);
       }
+      await new Promise(r => setTimeout(r, dt));
     }
   }
   has(k: string): boolean {

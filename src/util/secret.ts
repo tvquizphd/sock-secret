@@ -19,10 +19,11 @@ type SecretInputs = {
   git: Git,
   env: string
 }
-type SetSecretInputs = SecretInputs & {
+export type NamedSecret = {
   name: string,
   secret: string
 }
+type SetSecretInputs = SecretInputs & NamedSecret
 type HasName = {
   name: string
 }
@@ -34,6 +35,9 @@ interface SetSecret {
 }
 interface ListSecrets {
   (i: SecretInputs): Promise<string[]>;
+}
+export interface Lister {
+  (): Promise<string[]>;
 }
 
 const sodiumize: Sodiumize = async (token, id, env, value) => {
