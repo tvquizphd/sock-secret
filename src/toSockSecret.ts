@@ -38,7 +38,7 @@ const toSockServer: ToSockServer = async (inputs) => {
   const ends = needs?.last || none;
   const first = needs?.first || none;
   const channel = new ServerChannel(opts);
-  if (!first.every(channel.has)) return null;
+  if (!first.every(k => channel.has(k))) return null;
   return {
     get: async (op_id, tag) => {
       const k = toKey(op_id, tag);
