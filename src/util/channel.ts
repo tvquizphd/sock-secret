@@ -1,6 +1,6 @@
 import { listSecrets, setSecret } from "./secret";
-import { 
-  isObj, toB64urlQuery, fromB64urlQuery
+import {
+  isObj, toB64urlQuery
 } from "../b64url/index";
 
 import type {
@@ -13,14 +13,14 @@ type Opts = {
   git: Git
 };
 type Sender = (ns: NamedSecret) => unknown;
-type Seeker = () => Promise<string>;
+type Seeker = () => Promise<TreeAny>;
 export type ClientOpts = Opts & {
   sender?: Sender | null,
   seeker?: Seeker
 };
 export type ServerOpts = Opts & {
   lister?: Lister | null,
-  secrets?: string
+  secrets?: TreeAny
 }
 
 type EFn = (a: Error) => void;
@@ -34,11 +34,10 @@ const isTree = (n: NodeAny): n is TreeAny => {
   return isObj(n);
 }
 
-const parseTree = (s: string): KV[] => {
+const parseTree = (t: TreeAny): KV[] => {
   const o: KV[]  = [];
-  const i = deserialize(s);
-  if (!isTree(i)) return o;
-  Object.entries(i).forEach(([k,v]: KN) => {
+  if (!isTree(t)) return o;
+  Object.entries(t).forEach(([k,v]: KN) => {
     if (isTree(v)) o.push([k, v]);
   });
   return o;
@@ -46,10 +45,6 @@ const parseTree = (s: string): KV[] => {
 
 const serialize = (data: TreeAny): string => {
   return toB64urlQuery(data);
-}
-
-const deserialize = (str: string): TreeAny => {
-  return fromB64urlQuery(str);
 }
 
 class ClientChannel {
@@ -63,7 +58,9 @@ class ClientChannel {
   ins: INS;
 
   constructor(opts: ClientOpts) {
-    const no: Seeker = async () => "";
+    const no: Seeker = async () => {
+      return {} as TreeAny;
+    };
     this.sender = opts.sender || null;
     this.seeker = opts.seeker || no;
     this.waiters = new Map();
@@ -76,9 +73,9 @@ class ClientChannel {
   async seek() {
     const dt = 100; //TODO
     while (!this.done) {
-      const str = await this.seeker();
-      const tree = parseTree(str);
-      tree.forEach(([k,v]: KV) => {
+      const tree = await this.seeker();
+      const kvs = parseTree(tree);
+      kvs.forEach(([k,v]: KV) => {
         this.ins.set(k, v);
         this.choose(k, v);
       });
@@ -148,7 +145,7 @@ class ServerChannel {
   outs: INS;
 
   constructor(opts: ServerOpts) {
-    const sec = opts.secrets || "";
+    const sec = opts.secrets || {};
     this.lister = opts.lister || null;
     this.ins = new Map(parseTree(sec));
     this.outs = new Map();
@@ -182,9 +179,9 @@ class ServerChannel {
     if (v) return v;
     throw new Error(`Missing ${k}`);
   }
-  get output(): string {
+  get output(): TreeAny {
     const e = this.outs.entries();
-    return serialize(Object.fromEntries(e));
+    return Object.fromEntries(e);
   }
   addOutput(k: string, a: TreeAny) {
     this.outs.set(k, a);

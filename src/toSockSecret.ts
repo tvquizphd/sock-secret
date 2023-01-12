@@ -13,13 +13,13 @@ export interface SockClient extends Sock {
   quit: () => Promise<void>;
 }
 export interface SockServer extends Sock {
-  quit: () => Promise<string>;
+  quit: () => Promise<TreeAny>;
 }
 
 type Need = "first" | "last";
 type ClientOptions = ClientOpts;
 type ServerOptions = ServerOpts & {
-  needs?: Partial<Record<Need, string[]>> 
+  needs?: Partial<Record<Need, string[]>>
 };
 export interface ToSockClient {
   (i: ClientOptions): Promise<SockClient>;
