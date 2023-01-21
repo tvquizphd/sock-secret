@@ -60,10 +60,7 @@ const sodiumize: Sodiumize = async (token, id, env, value) => {
 
 const toRepoId: ToRepoId = async (git) => {
   const get_api = `/repos/${git.owner}/${git.repo}`;
-  const authorization = `token ${git.owner_token}`;
-  const get_r = await request(`GET ${get_api}`, {
-    headers: { authorization }
-  });
+  const get_r = await request(`GET ${get_api}`);
   return `${get_r.data.id}`;
 }
 
