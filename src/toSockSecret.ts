@@ -13,7 +13,7 @@ export interface SockClient extends Sock {
   quit: () => Promise<void>;
 }
 export interface SockServer extends Sock {
-  quit: () => Promise<TreeAny>;
+  quit: (used: string[]) => Promise<TreeAny>;
 }
 
 type Need = "first" | "last";
@@ -48,8 +48,11 @@ const toSockServer: ToSockServer = async (inputs) => {
       const k = toKey(op_id, tag);
       channel.addOutput(k, msg);
     },
-    quit: async () => {
+    quit: async (used) => {
       await channel.find(ends);
+      if (used) {
+        await channel.forget(used);
+      }
       return channel.output;
     }
   }

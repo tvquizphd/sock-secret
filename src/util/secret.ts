@@ -19,16 +19,20 @@ type SecretInputs = {
   git: Git,
   env: string
 }
-export type NamedSecret = {
-  name: string,
+type Named = { name: string }
+export type NamedSecret = Named & {
   secret: string
 }
+type DeleteSecretInputs = SecretInputs & Named
 type SetSecretInputs = SecretInputs & NamedSecret
 type HasName = {
   name: string
 }
 interface ToRepoId {
   (i: Git): Promise<string>;
+}
+interface DeleteSecret {
+  (i: DeleteSecretInputs): Promise<void>;
 }
 interface SetSecret {
   (i: SetSecretInputs): Promise<void>;
@@ -80,6 +84,17 @@ const listSecrets: ListSecrets = async (inputs) => {
   });
 }
 
+const deleteSecret: DeleteSecret = async (inputs) => {
+  const { name, git, env } = inputs;
+  const id = await toRepoId(git);
+  const authorization = `token ${git.owner_token}`;
+  const api_root = `/repositories/${id}/environments/${env}`;
+  const api_url = `${api_root}/secrets/${name}`;
+  await request(`DELETE ${api_url}`, {
+    headers: { authorization }
+  });
+}
+
 const setSecret: SetSecret = async (inputs) => {
   const { name, git, env, secret } = inputs;
   const id = await toRepoId(git);
@@ -94,4 +109,4 @@ const setSecret: SetSecret = async (inputs) => {
   });
 }
 
-export { listSecrets, setSecret }
+export { listSecrets, setSecret, deleteSecret }

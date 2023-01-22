@@ -1,4 +1,4 @@
-import { listSecrets, setSecret } from "./secret";
+import { listSecrets, deleteSecret, setSecret } from "./secret";
 import {
   isObj, toB64urlQuery
 } from "../b64url/index";
@@ -169,6 +169,12 @@ class ServerChannel {
         remains.delete(k);
       }
       await new Promise(r => setTimeout(r, dt));
+    }
+  }
+  async forget(used: string[]) {
+    const { git, env } = this;
+    for (const name of used) {
+      await deleteSecret({ git, env, name })
     }
   }
   has(k: string): boolean {
