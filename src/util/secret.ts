@@ -48,13 +48,12 @@ const sodiumize: Sodiumize = async (token, id, env, value) => {
     headers: { authorization }
   })
   const { key, key_id } = get_r.data;
-  const buff_key = Buffer.from(key, 'base64');
-  const buff_in = Buffer.from(value);
   await _sodium.ready;
   const seal = _sodium.crypto_box_seal;
-  const encryptedBytes = seal(buff_in, buff_key);
-  const buff_out = Buffer.from(encryptedBytes);
-  const ev = buff_out.toString('base64');
+  const b64 = _sodium.base64_variants.ORIGINAL;
+  const buff_key = _sodium.from_base64(key, b64);
+  const encryptedBytes = seal(value, buff_key);
+  const ev = _sodium.to_base64(encryptedBytes, b64);
   return { key_id, ev };
 }
 
