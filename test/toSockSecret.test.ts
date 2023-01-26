@@ -19,7 +19,7 @@ describe("Write Secrets", () => {
     const sock = await toSockClient({ env, git });
     const secret = { foo: "bar" };
     sock.give(undefined, "name", secret);
-    await sock.quit();
+    sock.quit();
     const passed = sock != null;
     expect(passed).toEqual(true);
   })
@@ -32,7 +32,7 @@ describe("Write Secrets", () => {
     const sock = await toSockClient({ env, git, sender });
     const secret = { foo: "bar" };
     sock.give(undefined, "name", secret);
-    await sock.quit();
+    sock.quit();
     const passed = sock != null;
     expect(passed).toEqual(true);
     expect(result).toEqual("noop__name #foo=bar");

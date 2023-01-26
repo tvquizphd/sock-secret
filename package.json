@@ -1,6 +1,6 @@
 {
   "name": "sock-secret",
-  "version": "2.3.0",
+  "version": "3.0.0",
   "description": "Socket connection for GitHub Secrets",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",

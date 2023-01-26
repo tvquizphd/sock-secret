@@ -10,22 +10,19 @@ export interface Sock {
   get: (o: OpId, t: string) => Promise<TreeAny | undefined>;
 }
 export interface SockClient extends Sock {
-  quit: () => Promise<void>;
+  quit: () => void;
 }
 export interface SockServer extends Sock {
-  quit: (used: string[]) => Promise<TreeAny>;
+  quit: () => TreeAny;
 }
 
-type Need = "first" | "last";
 type ClientOptions = ClientOpts;
-type ServerOptions = ServerOpts & {
-  needs?: Partial<Record<Need, string[]>>
-};
+type ServerOptions = ServerOpts;
 export interface ToSockClient {
   (i: ClientOptions): Promise<SockClient>;
 }
 export interface ToSockServer {
-  (i: ServerOptions): Promise<SockServer | null>;
+  (i: ServerOptions): Promise<SockServer>;
 }
 
 const toKey = (op_id: OpId, tag: string) => {
@@ -33,12 +30,7 @@ const toKey = (op_id: OpId, tag: string) => {
 }
 
 const toSockServer: ToSockServer = async (inputs) => {
-  const none: string[] = [];
-  const { needs, ...opts } = inputs;
-  const ends = needs?.last || none;
-  const first = needs?.first || none;
-  const channel = new ServerChannel(opts);
-  if (!first.every(k => channel.has(k))) return null;
+  const channel = new ServerChannel(inputs);
   return {
     get: async (op_id, tag) => {
       const k = toKey(op_id, tag);
@@ -48,11 +40,7 @@ const toSockServer: ToSockServer = async (inputs) => {
       const k = toKey(op_id, tag);
       channel.addOutput(k, msg);
     },
-    quit: async (used) => {
-      await channel.find(ends);
-      if (used) {
-        await channel.forget(used);
-      }
+    quit: () => {
       return channel.output;
     }
   }
@@ -69,7 +57,7 @@ const toSockClient: ToSockClient = async (inputs) => {
       const k = toKey(op_id, tag);
       channel.sendToServer(k, msg);
     },
-    quit: async () => {
+    quit: () => {
       channel.finish();
     }
   }
