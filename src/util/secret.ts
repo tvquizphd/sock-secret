@@ -1,5 +1,8 @@
+import { toB64urlQuery } from "../b64url/index";
 import { request } from "@octokit/request";
 import _sodium from 'libsodium-wrappers';
+
+import type { NameTree } from "../b64url/index";
 
 type Sodiumized = {
   ev: string,
@@ -15,33 +18,15 @@ export type Git = {
   owner: string,
   owner_token: string
 }
-type SecretInputs = {
+type SetSecretInputs = NameTree & {
   git: Git,
   env: string
-}
-type Named = { name: string }
-export type NamedSecret = Named & {
-  secret: string
-}
-type DeleteSecretInputs = SecretInputs & Named
-type SetSecretInputs = SecretInputs & NamedSecret
-type HasName = {
-  name: string
 }
 interface ToRepoId {
   (i: Git): Promise<string>;
 }
-interface DeleteSecret {
-  (i: DeleteSecretInputs): Promise<void>;
-}
 interface SetSecret {
   (i: SetSecretInputs): Promise<void>;
-}
-interface ListSecrets {
-  (i: SecretInputs): Promise<string[]>;
-}
-export interface Lister {
-  (): Promise<string[]>;
 }
 
 const sodiumize: Sodiumize = async (token, id, env, value) => {
@@ -70,38 +55,14 @@ const toRepoId: ToRepoId = async (git) => {
   return `${get_r.data.id}`;
 }
 
-const listSecrets: ListSecrets = async (inputs) => {
-  const { git, env } = inputs;
-  const id = await toRepoId(git);
-  const authorization = `token ${git.owner_token}`;
-  const api_root = `/repositories/${id}/environments/${env}`;
-  const api_url = `${api_root}/secrets?100`;
-  const { data } = await request(`GET ${api_url}`, {
-    headers: { authorization }
-  });
-  return data.secrets.map((s: HasName) => {
-    return s.name;
-  });
-}
-
-const deleteSecret: DeleteSecret = async (inputs) => {
-  const { name, git, env } = inputs;
-  const id = await toRepoId(git);
-  const authorization = `token ${git.owner_token}`;
-  const api_root = `/repositories/${id}/environments/${env}`;
-  const api_url = `${api_root}/secrets/${name}`;
-  await request(`DELETE ${api_url}`, {
-    headers: { authorization }
-  });
-}
-
 const setSecret: SetSecret = async (inputs) => {
-  const { name, git, env, secret } = inputs;
+  const { command, tree, git, env } = inputs;
   const id = await toRepoId(git);
+  const secret = toB64urlQuery(tree);
   const authorization = `token ${git.owner_token}`;
   const e_secret = await sodiumize(git.owner_token, id, env, secret);
   const api_root = `/repositories/${id}/environments/${env}`;
-  const api_url = `${api_root}/secrets/${name}`;
+  const api_url = `${api_root}/secrets/${command}`;
   await request(`PUT ${api_url}`, {
     key_id: e_secret.key_id,
     encrypted_value: e_secret.ev,
@@ -109,4 +70,4 @@ const setSecret: SetSecret = async (inputs) => {
   });
 }
 
-export { listSecrets, setSecret, deleteSecret }
+export { setSecret }

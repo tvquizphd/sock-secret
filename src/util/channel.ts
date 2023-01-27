@@ -1,196 +1,156 @@
-import { listSecrets, deleteSecret, setSecret } from "./secret";
-import {
-  isObj, toB64urlQuery
-} from "../b64url/index";
+import { toSender, toSeeker } from "./io";
 
-import type {
-  NodeAny, TreeAny
-} from "../b64url/index";
-import type { NamedSecret, Git, Lister } from "./secret";
+import type { TreeAny, NameTree, CommandTreeList } from "../b64url/index";
+import type { Seeker, Sender } from "./io";
+import type { OptOut, OptIn } from "./io";
 
-type Opts = {
-  env: string,
-  git: Git
+export type ClientOpts = {
+  mapper?: Mapper,
+  output?: OptOut,
+  input?: OptIn,
+  delay?: number
 };
-type Sender = (ns: NamedSecret) => unknown;
-type Seeker = () => Promise<TreeAny>;
-export type ClientOpts = Opts & {
-  sender?: Sender | null,
-  seeker?: Seeker
-};
-export type ServerOpts = Opts & {
-  lister?: Lister | null,
-  secrets?: TreeAny
+export type ServerOpts = {
+  inputs: CommandTreeList 
 }
 
 type EFn = (a: Error) => void;
 type Fn = (s: TreeAny) => void;
 type Choice = { yes: Fn, no: EFn };
-type INS = Map<string, TreeAny>;
-type KV = [string, TreeAny];
-type KN = [string, NodeAny];
+type CommandMap = Map<string, TreeAny>;
 
-const isTree = (n: NodeAny): n is TreeAny => {
-  return isObj(n);
+interface ParseTree {
+  (ctl: CommandTreeList): CommandMap;
 }
 
-const parseTree = (t: TreeAny): KV[] => {
-  const o: KV[]  = [];
-  if (!isTree(t)) return o;
-  Object.entries(t).forEach(([k,v]: KN) => {
-    if (isTree(v)) o.push([k, v]);
-  });
-  return o;
+interface Mapper {
+  (ctl: CommandTreeList): CommandTreeList;
 }
 
-const serialize = (data: TreeAny): string => {
-  return toB64urlQuery(data);
+const parseTree: ParseTree = (ctl) => {
+  return ctl.reduce((o, {command, tree}) => {
+    o.set(command, tree);
+    return o;
+  }, new Map() as CommandMap);
 }
+
+const noMapper: Mapper = (ctl) => ctl;
 
 class ClientChannel {
 
   waiters: Map<string, Choice>;
   sender: Sender | null;
-  seeker: Seeker;
+  seeker: Seeker | null;
+  mapper: Mapper;
   done: boolean;
-  env: string;
-  git: Git;
-  ins: INS;
+  dt: number;
+  ins: CommandMap;
 
   constructor(opts: ClientOpts) {
-    const no: Seeker = async () => {
-      return {} as TreeAny;
-    };
-    this.sender = opts.sender || null;
-    this.seeker = opts.seeker || no;
+    this.dt = (opts.delay || 1) * 1000;
+    this.sender = toSender(opts.output || null);
+    this.seeker = toSeeker(opts.input || null);
+    this.mapper = opts.mapper || noMapper;
+    this.done = this.seeker === null;
     this.waiters = new Map();
     this.ins = new Map();
-    this.env = opts.env;
-    this.git = opts.git;
     this.done = false;
     this.seek();
   }
+
   async seek() {
-    const dt = 100; //TODO
-    while (!this.done) {
-      const tree = await this.seeker();
-      const kvs = parseTree(tree);
-      kvs.forEach(([k,v]: KV) => {
-        this.ins.set(k, v);
-        this.choose(k, v);
+    const { dt } = this;
+    while (!this.done && this.seeker !== null) {
+      const ctli = await this.seeker();
+      const ctl = await this.mapper(ctli);
+      ctl.forEach(({ command, tree }) => {
+        this.ins.set(command, tree);
+        this.choose({ command, tree });
       });
       await new Promise(r => setTimeout(r, dt));
     }
   }
-  has(k: string): boolean {
-    return this.ins.has(k);
+  has(command: string): boolean {
+    return this.ins.has(command);
   }
-  get(k: string): TreeAny {
-    const v = this.ins.get(k);
-    if (v) return v;
-    throw new Error(`Missing ${k}`);
+  get(command: string): TreeAny {
+    const tree = this.ins.get(command);
+    if (tree) return tree;
+    throw new Error(`Missing ${command}`);
   }
-  wait(k: string) {
+  wait(command: string) {
     return new Promise((yes: Fn, no: EFn) => {
-      console.log(`Awaiting ${k}`);
-      if (this.waiters.has(k)) {
-        no(new Error(`Duplicate ${k} getter.`));
+      console.log(`Awaiting ${command}`);
+      if (this.waiters.has(command)) {
+        no(new Error(`Duplicate ${command} getter.`));
       }
-      this.waiters.set(k, { yes, no });
+      this.waiters.set(command, { yes, no });
     })
   }
-  sendToServer(name: string, a: TreeAny) {
-    const { git, env } = this;
-    const secret = serialize(a);
-    if (this.sender !== null) {
-      this.sender({ name, secret });
+  sendToServer(ctl: CommandTreeList) {
+    if (this.sender === null) {
+      throw new Error("Can't send, no output configured.");
     }
-    else {
-      setSecret({ name, secret, git, env });
+    this.sender(ctl);
+  }
+  choose({ command, tree }: NameTree) {
+    const choice = this.waiters.get(command);
+    if (choice) {
+      this.waiters.delete(command);
+      return choice.yes(tree);
     }
   }
-  choose(k: string, value?: TreeAny) {
-    const use = this.waiters.get(k);
-    if (use) {
-      this.waiters.delete(k);
-      if (value) return use.yes(value);
-      const msg = `Unable to resolve ${k}.`;
-      return use.no(new Error(msg));
+  async access(command: string): Promise<TreeAny> {
+    if (this.seeker === null) {
+      throw new Error("Can't access, no input configured.");
     }
-  }
-  async access(k: string): Promise<TreeAny> {
-    if (this.has(k)) {
-      const v = this.get(k);
-      console.log(`Resolving ${k}`);
-      this.choose(k);
-      return v;
+    if (this.has(command)) {
+      const tree = this.get(command);
+      console.log(`Resolving ${command}`);
+      this.choose({ command, tree });
+      return tree;
     }
-    return this.wait(k);
+    return this.wait(command);
   }
   finish() {
     this.done = true;
     const keys = this.waiters.keys();
-    [...keys].forEach((k: string) => {
-      this.choose(k);
+    [...keys].forEach((command: string) => {
+      const choice = this.waiters.get(command)
+      if (choice) {
+        this.waiters.delete(command);
+        const msg = `Unable to resolve ${command}.`;
+        return choice.no(new Error(msg));
+      }
     });
   }
 }
 
 class ServerChannel {
 
-  lister: Lister | null;
-  env: string;
-  git: Git;
-  ins: INS;
-  outs: INS;
+  ins: CommandMap;
+  outs: CommandMap;
 
   constructor(opts: ServerOpts) {
-    const sec = opts.secrets || {};
-    this.lister = opts.lister || null;
-    this.ins = new Map(parseTree(sec));
+    this.ins = parseTree(opts.inputs);
     this.outs = new Map();
-    this.env = opts.env;
-    this.git = opts.git;
   }
-  async find(ends: string[]) {
-    const remains = new Set(ends);
-    const { git, env } = this;
-    const opts = { git, env };
-    const lister = async () => {
-      if (this.lister !== null) {
-        return await this.lister();
-      }
-      return await listSecrets(opts);
-    }
-    const dt = 100; //TODO
-    while (remains.size > 0) {
-      const items = await lister();
-      for (const k of items) {
-        remains.delete(k);
-      }
-      await new Promise(r => setTimeout(r, dt));
-    }
+  has(command: string): boolean {
+    return this.ins.has(command);
   }
-  async forget(used: string[]) {
-    const { git, env } = this;
-    for (const name of used) {
-      await deleteSecret({ git, env, name })
-    }
+  get(command: string): TreeAny {
+    const tree = this.ins.get(command);
+    if (tree) return tree;
+    throw new Error(`Missing ${command}`);
   }
-  has(k: string): boolean {
-    return this.ins.has(k);
+  get output(): CommandTreeList {
+    const e = [...this.outs.entries()];
+    return e.map(([command, tree]) => {
+      return { command, tree };
+    });
   }
-  get(k: string): TreeAny {
-    const v = this.ins.get(k);
-    if (v) return v;
-    throw new Error(`Missing ${k}`);
-  }
-  get output(): TreeAny {
-    const e = this.outs.entries();
-    return Object.fromEntries(e);
-  }
-  addOutput(k: string, a: TreeAny) {
-    this.outs.set(k, a);
+  addOutput(command: string, a: TreeAny) {
+    this.outs.set(command, a);
   }
 }
 

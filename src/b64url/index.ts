@@ -7,6 +7,23 @@ export type TreeAny = {
 }
 export type NodeAny = TreeAny | boolean | Uint8Array | string;
 
+export type CommandTreeList = NameTree[];
+interface ToCommandTreeList {
+  (t: string): CommandTreeList;
+}
+interface FromCommandTreeList {
+  (t: CommandTreeList): string;
+}
+export type NameTree = {
+  command: string,
+  tree: TreeAny
+} 
+interface ToNameTree {
+  (t: string): NameTree;
+}
+interface FromNameTree {
+  (t: NameTree): string;
+}
 type TreeStr = {
   [k: string]: TreeStr | string;
 }
@@ -177,7 +194,39 @@ const fromB64urlQuery: FromB64Q = (hash) => {
   return fromB64urlObj(nester(obj));
 }
 
+const toNameTree: ToNameTree = (s) => {
+  const trio = s.split(/(#.*)/s);
+  if (!s.length) {
+    return { command: "", tree: {} }
+  }
+  if (trio.length !== 3) {
+    throw new Error('Poorly formatted command');
+  }
+  const [command, rest] = trio;
+  const tree = fromB64urlQuery(rest);
+  return { command, tree };
+}
+
+const fromNameTree: FromNameTree = ({ command, tree }) => {
+  return command + toB64urlQuery(tree);
+}
+
+const fromCommandTreeList: FromCommandTreeList = (ctl) => {
+  return ctl.map(fromNameTree).join('/');
+}
+
+const toCommandTreeList: ToCommandTreeList = (text) => {
+  const list = text.split('/');
+  return list.map(line => {
+    return toNameTree(line);
+  });
+}
+
 export {
+  toNameTree,
+  fromNameTree,
   toB64urlQuery,
-  fromB64urlQuery
+  fromB64urlQuery,
+  toCommandTreeList,
+  fromCommandTreeList
 }

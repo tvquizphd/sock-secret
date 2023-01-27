@@ -1,6 +1,6 @@
 {
   "name": "sock-secret",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "description": "Socket connection for GitHub Secrets",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -10,7 +10,7 @@
     "lint": "eslint . --ext .ts",
     "build:lint": "pnpm build && pnpm lint",
     "build:publish": "pnpm build && pnpm publish",
-    "build": "tsup src/index.ts --format cjs,esm --dts --clean --minify --target=chrome51,firefox54,safari12"
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean --target=chrome51,firefox54,safari12"
   },
   "devDependencies": {
     "@types/jest": "^29.2.2",

@@ -1,6 +1,6 @@
 import { ServerChannel, ClientChannel } from "./util/channel";
 
-import type { TreeAny } from "./b64url/index";
+import type { TreeAny, CommandTreeList } from "./b64url/index";
 import type { ClientOpts, ServerOpts } from "./util/channel";
 
 type OpId = string | undefined;
@@ -13,7 +13,7 @@ export interface SockClient extends Sock {
   quit: () => void;
 }
 export interface SockServer extends Sock {
-  quit: () => TreeAny;
+  quit: () => CommandTreeList;
 }
 
 type ClientOptions = ClientOpts;
@@ -29,8 +29,8 @@ const toKey = (op_id: OpId, tag: string) => {
   return `${op_id || 'noop'}__${tag}`;
 }
 
-const toSockServer: ToSockServer = async (inputs) => {
-  const channel = new ServerChannel(inputs);
+const toSockServer: ToSockServer = async (opts) => {
+  const channel = new ServerChannel(opts);
   return {
     get: async (op_id, tag) => {
       const k = toKey(op_id, tag);
@@ -46,16 +46,17 @@ const toSockServer: ToSockServer = async (inputs) => {
   }
 }
 
-const toSockClient: ToSockClient = async (inputs) => {
-  const channel = new ClientChannel(inputs);
+const toSockClient: ToSockClient = async (opts) => {
+  const channel = new ClientChannel(opts);
   return {
     get: async (op_id, tag) => {
-      const k = toKey(op_id, tag);
-      return channel.access(k);
+      const command = toKey(op_id, tag);
+      return channel.access(command);
     },
-    give: (op_id, tag, msg) => {
-      const k = toKey(op_id, tag);
-      channel.sendToServer(k, msg);
+    give: (op_id, tag, tree) => {
+      const command = toKey(op_id, tag);
+      const ct = { command, tree };
+      channel.sendToServer([ ct ]);
     },
     quit: () => {
       channel.finish();
