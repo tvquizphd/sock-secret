@@ -59,14 +59,14 @@ class ClientChannel {
   }
 
   async seek() {
-    const { dt } = this;
     while (!this.done && this.seeker !== null) {
-      const ctli = await this.seeker();
+      const {delay, ctli} = await this.seeker();
       const ctl = await this.mapper(ctli);
       ctl.forEach(({ command, tree }) => {
         this.ins.set(command, tree);
         this.choose({ command, tree });
       });
+      const dt = Math.max(delay * 1000, this.dt);
       await new Promise(r => setTimeout(r, dt));
     }
   }

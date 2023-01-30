@@ -3,12 +3,20 @@ import { request } from "@octokit/request";
 import { 
   toCommandTreeList, fromCommandTreeList
 } from "../b64url/index";
+import { 
+  toMinutes, toBiasedDelay
+} from "./toBiasedDelay";
 
 import type { Git } from "./secret";
+import type { LimitLeft } from "./toBiasedDelay";
 import type { CommandTreeList } from "../b64url/index";
 
 export type Sender = (ns: CommandTreeList) => unknown;
-export type Seeker = () => Promise<CommandTreeList>;
+export type Seeker = () => Promise<SeekerOut>;
+type SeekerOut = {
+  ctli: CommandTreeList,
+  delay: number 
+}
 type Headers = {
   authorization?: string
 }
@@ -29,6 +37,14 @@ export type OptOut = (
   SecretOut | DispatchOut | FileOut
 )
 
+interface ReadGitHubHeaders {
+  (h: GitHubHeaders) : LimitLeft 
+}
+
+type GitHubHeaders = {
+ 'x-ratelimit-reset'?: string,
+ 'x-ratelimit-remaining'?: string 
+}
 type ReleaseIn = {
   git: Git
 }
@@ -118,13 +134,40 @@ const toFileSender = (opt: FileOut) => {
   return sender;
 }
 
+const readGitHubHeaders: ReadGitHubHeaders = (headers) => {
+  const when = new Date();
+  const basis = Math.floor(when.getTime() / 1000);
+  const count = parseInt(headers['x-ratelimit-remaining'] || '0');
+  const reset = parseInt(headers['x-ratelimit-reset'] || '0');
+  const minutes = toMinutes(reset) - toMinutes(basis);
+  return { when, count, minutes };
+}
+
 const toReleaseSeeker = (opt: ReleaseIn) => {
   const { owner, repo } = opt.git; 
   const headers = toHeaders(opt.git, false);
   const api = `/repos/${owner}/${repo}/releases/latest`;
+  const limit: LimitLeft = { 
+    when: new Date(), count: 0, minutes: 0
+  };
   const seeker: Seeker = async () => {
     const result = await request(`GET ${api}`, { headers });
-    return toCommandTreeList(result.data?.body || "");
+    const newLimit = readGitHubHeaders(result.headers);
+    const ctli = toCommandTreeList(result.data?.body || "");
+    // Detect when the time period has reset
+    if (newLimit.count >= limit.count) {
+      limit.minutes = newLimit.minutes;
+      limit.count = newLimit.count;
+      limit.when = new Date();
+    }
+    // We have exceeded the allowed limit
+    if (newLimit.count === 0) {
+      console.warn('Exceeded release API limit');
+      const sleep = newLimit.minutes * 60;
+      return { ctli, delay: sleep };
+    }
+    const delay = toBiasedDelay(limit);
+    return { ctli, delay };
   }
   return seeker;
 }
@@ -132,7 +175,8 @@ const toReleaseSeeker = (opt: ReleaseIn) => {
 const toFileSeeker = (opt: FileIn) => {
   const { read } = opt; 
   const seeker: Seeker = async () => {
-    return toCommandTreeList(await read());
+    const ctli = toCommandTreeList(await read());
+    return { ctli, delay: 0 };
   }
   return seeker;
 }
