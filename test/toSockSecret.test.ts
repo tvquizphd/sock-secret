@@ -15,7 +15,7 @@ describe("Write Secrets", () => {
   it("Await release body", async () => {
     const git = { repo, owner, owner_token };
     const input = { git };
-    const sock_in = { input, delay: 1 };
+    const sock_in = { input, delay: .1 };
     const sock = await toSockClient(sock_in);
     const noop = await sock.get('test', '0');
     sock.quit();

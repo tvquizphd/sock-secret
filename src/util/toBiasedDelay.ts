@@ -6,6 +6,9 @@ const toMinutes = (seconds: number) => {
 }
 
 const _toBiasedDelay = (dt: number, limit: Limit) => {
+  if (limit.count <= 0) {
+    return limit.minutes;
+  }
   const N = limit.count;
   const M = limit.minutes;
   const m = toMinutes(dt + 15) + .5;
