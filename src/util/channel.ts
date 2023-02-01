@@ -5,6 +5,7 @@ import type { Seeker, Sender } from "./io";
 import type { OptOut, OptIn } from "./io";
 
 export type ClientOpts = {
+  preface?: CommandTreeList,
   mapper?: Mapper,
   output?: OptOut,
   input?: OptIn,
@@ -39,6 +40,7 @@ const noMapper: Mapper = (ctl) => ctl;
 class ClientChannel {
 
   waiters: Map<string, Choice>;
+  preface: CommandTreeList;
   sender: Sender | null;
   seeker: Seeker | null;
   mapper: Mapper;
@@ -51,6 +53,7 @@ class ClientChannel {
     this.sender = toSender(opts.output || null);
     this.seeker = toSeeker(opts.input || null);
     this.mapper = opts.mapper || noMapper;
+    this.preface = opts.preface || [];
     this.done = this.seeker === null;
     this.waiters = new Map();
     this.ins = new Map();
@@ -91,7 +94,7 @@ class ClientChannel {
     if (this.sender === null) {
       throw new Error("Can't send, no output configured.");
     }
-    this.sender(ctl);
+    this.sender([...this.preface, ...ctl]);
   }
   choose({ command, tree }: NameTree) {
     const choice = this.waiters.get(command);
