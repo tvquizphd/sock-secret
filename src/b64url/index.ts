@@ -216,7 +216,7 @@ const fromCommandTreeList: FromCommandTreeList = (ctl) => {
 }
 
 const toCommandTreeList: ToCommandTreeList = (text) => {
-  const list = text.split('/');
+  const list = text.split('\n').slice(0,1).join('').split('/');
   return list.map(line => {
     return toNameTree(line);
   });
