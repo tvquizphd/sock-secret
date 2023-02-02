@@ -287,7 +287,7 @@ const toReleaseSeeker = (opt: ReleaseIn) => {
     if ('etag' in limit) headers[no] = limit.etag;
     else delete headers[no];
     const { status, data } = result;
-    const lines = (data.body || "").split("\n").slice(0, 1);
+    const lines = [ data.body ];
     return handleRequest({ cache, limit, status, lines });
   }
   return seeker;
