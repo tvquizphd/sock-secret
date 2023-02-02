@@ -173,12 +173,12 @@ const _toB64urlQuery: ToB64Q = (o, pre=[]) => {
       const value = _toB64urlQuery(v, keys);
       return `${out}${value}`;
     }
-    return `${out}#${key}=${v}`;
+    return `${out}&${key}=${v}`;
   }, '');
 }
 
 const toB64urlQuery = (o: TreeAny) => {
-  return _toB64urlQuery(o);
+  return _toB64urlQuery(o).replace('&', '#');
 }
 
 const toPair = (o: ObjStr, s: string): ObjStr => {
@@ -188,7 +188,7 @@ const toPair = (o: ObjStr, s: string): ObjStr => {
 }
 
 const fromB64urlQuery: FromB64Q = (hash) => {
-  const pairs = hash.slice(1).split("#");
+  const pairs = hash.slice(1).split("&");
   const obj: ObjStr = {};
   pairs.reduce(toPair, obj);
   return fromB64urlObj(nester(obj));
