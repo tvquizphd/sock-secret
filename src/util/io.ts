@@ -232,7 +232,7 @@ const toSafeSender: ToSafeSender = (opt) => {
   return async (ctli: CommandTreeList) => {
     for (let t = 0; t < tries; t++) {
       const { status, headers } = await unsafe(ctli);
-      if ([200, 204].includes(status)) return;
+      if (`${status}`.startsWith('2')) return;
       const limit = readGitHubHeaders(headers);
       const { delay } = handleRequest({ cache, limit, status });
       const dt = Math.max(min_dt, 1000 * delay);
@@ -325,7 +325,7 @@ const handleRequest: HandleRequest = (opts) => {
       return ctli.concat(toCommandTreeList(line));
     }, [] as CommandTreeList);
   }
-  else if (![200, 204].includes(status)) {
+  else if (!`${status}`.startsWith('2')) {
     if (status === 403 && limit.count === 0) {
       const { minutes: m } = limit
       console.warn(`Fetch forbidden for ${m} min.`);
@@ -336,7 +336,6 @@ const handleRequest: HandleRequest = (opts) => {
       const delay = toBiasedDelay(cache);
       return { ctli: cache.ctli, delay };
     }
-    console.log({status, 'bad': 'bad'})
     const e = `HTTP Error ${status}.`;
     throw new Error(e);
   }
