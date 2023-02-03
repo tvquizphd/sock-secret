@@ -8,7 +8,7 @@ import {
   toMinutes, toBiasedDelay
 } from "./toBiasedDelay";
 
-import type { Git } from "./secret";
+import type { Git, GitNoAuth } from "./secret";
 import type { LimitLeft } from "./toBiasedDelay";
 import type { CommandTreeList } from "../b64url/index";
 import type { OctokitResponse } from "@octokit/types";
@@ -41,13 +41,20 @@ export type OptOut = (
 
 type RequestOpts = {
   headers: Headers,
-  git: Git
+  git: GitNoAuth
+}
+interface Permissions {
+  [key: string]: string;
+}
+type InstallRaw = {
+  permissions: Permissions,
+  id: number,
 }
 type HasBody = {
   body: string
 }
 type HasBodies = HasBody[];
-type Data = HasBody | HasBodies;
+type Data = HasBody | HasBodies | InstallRaw;
 interface RequestInterface<D> {
   (o: RequestOpts): Promise<OctokitResponse<D>>
 }
@@ -82,12 +89,17 @@ type IssuesIn = {
   issues: number,
   git: Git
 }
+type InstallIn = {
+  app_token: string,
+  owner: string,
+  k?: "install"
+}
 type FileIn = {
   read: () => Promise<string>
 }
 
 export type OptIn = (
-  ReleaseIn | IssuesIn | FileIn
+  ReleaseIn | IssuesIn | InstallIn | FileIn
 )
 
 export function isString(s: unknown): s is string {
@@ -140,6 +152,18 @@ function isIssuesIn(a: OptIn): a is IssuesIn {
   return false;
 }
 
+function isInstallIn(a: OptIn): a is InstallIn {
+  const { k, owner, app_token } = a as InstallIn;
+  if (typeof k === "string" && k !== "install") {
+    return false;
+  }
+  if (typeof app_token === "string") {
+    return typeof owner === "string";
+  }
+  return false;
+}
+
+function handleError(e: unknown, d: InstallRaw): OctokitResponse<InstallRaw>;
 function handleError(e: unknown, d: HasBodies): OctokitResponse<HasBodies>;
 function handleError(e: unknown, d: HasBody): OctokitResponse<HasBody>;
 function handleError(e: unknown, d: Data): OctokitResponse<Data> {
@@ -170,6 +194,17 @@ const requestIssues: RequestInterface<HasBodies> = async ({ git, headers }) => {
   }
 }
 
+const requestInstall: RequestInterface<InstallRaw> = async ({ git, headers }) => {
+  const api = `/users/${git.owner}/installation`;
+  try {
+    return await request(`GET ${api}`, { headers });
+  }
+  catch (e: unknown) {
+    const permissions: Permissions = {};
+    return handleError(e, { id: -1, permissions } as InstallRaw);
+  }
+}
+
 const requestRelease: RequestInterface<HasBody> = async ({ git, headers }) => {
   const api = `/repos/${git.owner}/${git.repo}/releases/latest`;
   try {
@@ -190,11 +225,10 @@ const toSecretSender = (opt: SecretOut) => {
   return sender;
 }
 
-const toHeaders = (git: Git, need_auth: boolean): Headers => {
+const toHeaders = (token: string, need_auth: boolean): Headers => {
   const headers: Headers = {};
-  const { owner_token } = git;
-  if (owner_token.length > 0) {
-    headers.authorization = 'bearer ' + owner_token;
+  if (token.length > 0) {
+    headers.authorization = 'bearer ' + token;
   }
   else if (need_auth) {
     throw new Error('No GitHub authentication token');
@@ -203,8 +237,8 @@ const toHeaders = (git: Git, need_auth: boolean): Headers => {
 }
 
 const toDispatchSender = (opt: DispatchOut) => {
-  const { owner, repo } = opt.git;
-  const headers = toHeaders(opt.git, true);
+  const { owner, repo, owner_token } = opt.git;
+  const headers = toHeaders(owner_token, true);
   const { key, workflow: event_type } = opt;
   const api = "/repos/{owner}/{repo}/dispatches";
   const sender: Sender = (ctli) => {
@@ -278,9 +312,10 @@ const toNewCache = (): CommandCache => {
 
 const toReleaseSeeker = (opt: ReleaseIn) => {
   const { git } = opt;
+  const { owner_token } = git;
   const cache = toNewCache();
   const no = "If-None-Match";
-  const headers = toHeaders(git, false);
+  const headers = toHeaders(owner_token, false);
   const seeker: Seeker = async () => {
     const result = await requestRelease({ git, headers });
     const limit = readGitHubHeaders(result.headers);
@@ -295,9 +330,10 @@ const toReleaseSeeker = (opt: ReleaseIn) => {
 
 const toIssuesSeeker = (opt: IssuesIn) => {
   const { git, issues } = opt;
+  const { owner_token } = git;
   const cache = toNewCache();
   const no = "If-None-Match";
-  const headers = toHeaders(git, false);
+  const headers = toHeaders(owner_token, false);
   const seeker: Seeker = async () => {
     const result = await requestIssues({ git, headers });
     const limit = readGitHubHeaders(result.headers);
@@ -308,6 +344,29 @@ const toIssuesSeeker = (opt: IssuesIn) => {
       if (i >= issues) return o;
     return o.concat([ d.body || "" ]);
     }, [] as string[]);
+    return handleRequest({ cache, limit, status, lines });
+  }
+  return seeker;
+}
+
+const toInstallSeeker = (opt: InstallIn) => {
+  const { app_token, owner } = opt;
+  const cache = toNewCache();
+  const no = "If-None-Match";
+  const headers = toHeaders(app_token, true);
+  const seeker: Seeker = async () => {
+    const git = { owner, repo: "" };
+    const result = await requestInstall({ git, headers });
+    const limit = readGitHubHeaders(result.headers);
+    if ('etag' in limit) headers[no] = limit.etag;
+    else delete headers[no];
+    const command = "install__ready";
+    const { status, data } = result;
+    const { id, permissions } = data;
+    const tree = { id: `${id}`, permissions };
+    const ctli = [ { command, tree } ];
+    const line = fromCommandTreeList(ctli);
+    const lines = [ line ];
     return handleRequest({ cache, limit, status, lines });
   }
   return seeker;
@@ -342,6 +401,9 @@ function toSeeker (opt: OptIn): Seeker;
 function toSeeker (opt: OptIn | null): Seeker | null;
 function toSeeker (opt: OptIn | null): Seeker | null {
   if (opt === null) return null;
+  if (isInstallIn(opt)) {
+    return toInstallSeeker(opt);
+  }
   if (isIssuesIn(opt)) {
     return toIssuesSeeker(opt);
   }

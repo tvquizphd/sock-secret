@@ -13,11 +13,14 @@ interface Sodiumize {
   (t: string, i: string, e: string, v: string): Promise<Sodiumized>;
 }
 
-export type Git = {
+export type GitNoAuth = {
   repo: string,
-  owner: string,
+  owner: string
+}
+export type Git = GitNoAuth & {
   owner_token: string
 }
+
 type SetSecretInputs = NameTree & {
   git: Git,
   env: string
