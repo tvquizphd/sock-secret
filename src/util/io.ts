@@ -341,8 +341,9 @@ const toIssuesSeeker = (opt: IssuesIn) => {
     else delete headers[no];
     const { status, data } = result;
     const lines = data.reduce((o, d, i) => {
+      if (d.body.length === 0) return o;
       if (i >= issues) return o;
-    return o.concat([ d.body || "" ]);
+      return o.concat([ d.body ]);
     }, [] as string[]);
     return handleRequest({ cache, limit, status, lines });
   }
@@ -360,13 +361,18 @@ const toInstallSeeker = (opt: InstallIn) => {
     const limit = readGitHubHeaders(result.headers);
     if ('etag' in limit) headers[no] = limit.etag;
     else delete headers[no];
-    const command = "install__ready";
+    // Allow 404 for missing release
+    if (result.status === 404) {
+      const status = 200;
+      const lines: string[] = [];
+      return handleRequest({ cache, limit, status, lines });
+    }
     const { status, data } = result;
     const { id, permissions } = data;
     const tree = { id: `${id}`, permissions };
-    const ctli = [ { command, tree } ];
-    const line = fromCommandTreeList(ctli);
-    const lines = [ line ];
+    const ct = { command: "install__ready", tree };
+    const line = fromCommandTreeList([ ct ]);
+    const lines = [ line ]
     return handleRequest({ cache, limit, status, lines });
   }
   return seeker;
