@@ -27,7 +27,7 @@ describe("Write Secrets", () => {
     const sock_in = { output, delay: 1 };
     const sock = await toSockClient(sock_in);
     const secret = { foo: "bar" };
-    sock.give(undefined, "name", secret);
+    await sock.give(undefined, "name", secret);
     sock.quit();
     const passed = sock != null;
     expect(passed).toEqual(true);
@@ -42,7 +42,7 @@ describe("Write Secrets", () => {
     const sock_in = { output, delay };
     const sock = await toSockClient(sock_in);
     const secret = { foo: "bar" };
-    sock.give(undefined, "name", secret);
+    await sock.give(undefined, "name", secret);
     sock.quit();
     const passed = sock != null;
     expect(passed).toEqual(true);

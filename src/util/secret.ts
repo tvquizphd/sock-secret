@@ -28,9 +28,6 @@ type SetSecretInputs = NameTree & {
 interface ToRepoId {
   (i: Git): Promise<string>;
 }
-interface SetSecret {
-  (i: SetSecretInputs): Promise<void>;
-}
 
 const sodiumize: Sodiumize = async (token, id, env, value) => {
   const api_root = `/repositories/${id}/environments/${env}`;
@@ -58,15 +55,15 @@ const toRepoId: ToRepoId = async (git) => {
   return `${get_r.data.id}`;
 }
 
-const setSecret: SetSecret = async (inputs) => {
-  const { command, tree, git, env } = inputs;
+const setSecret = async (opts: SetSecretInputs) => {
+  const { command, tree, git, env } = opts;
   const id = await toRepoId(git);
   const secret = toB64urlQuery(tree);
   const authorization = `token ${git.owner_token}`;
   const e_secret = await sodiumize(git.owner_token, id, env, secret);
   const api_root = `/repositories/${id}/environments/${env}`;
   const api_url = `${api_root}/secrets/${command}`;
-  await request(`PUT ${api_url}`, {
+  return await request(`PUT ${api_url}`, {
     key_id: e_secret.key_id,
     encrypted_value: e_secret.ev,
     headers: { authorization }

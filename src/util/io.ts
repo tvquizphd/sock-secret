@@ -13,7 +13,10 @@ import type { LimitLeft } from "./toBiasedDelay";
 import type { CommandTreeList } from "../b64url/index";
 import type { OctokitResponse } from "@octokit/types";
 
-export type Sender = (ns: CommandTreeList) => unknown;
+interface UnsafeSender {
+  (ns: CommandTreeList): Promise<OctokitResponse<unknown>>
+}
+export type Sender = (ns: CommandTreeList) => Promise<void>;
 export type Seeker = () => Promise<SeekerOut>;
 type SeekerOut = {
   ctli: CommandTreeList,
@@ -23,11 +26,15 @@ type Headers = {
   authorization?: string,
   "If-None-Match"?: string
 }
-type SecretOut = {
+type Timing = {
+  tries: number,
+  delay: number
+}
+type SecretOut = Partial<Timing> & {
   env: string,
   git: Git
 }
-type DispatchOut = {
+type DispatchOut = Partial<Timing> & {
   workflow: string,
   key: string,
   git: Git
@@ -38,7 +45,9 @@ type FileOut = {
 export type OptOut = (
   SecretOut | DispatchOut | FileOut
 )
-
+interface ToSafeSender {
+  (o: Timing & { unsafe: UnsafeSender }): Sender;
+}
 type RequestOpts = {
   headers: Headers,
   git: GitNoAuth
@@ -54,15 +63,15 @@ type HasBody = {
   body: string
 }
 type HasBodies = HasBody[];
-type Data = HasBody | HasBodies | InstallRaw;
+type Data = HasBody | HasBodies | InstallRaw | null;
 interface RequestInterface<D> {
   (o: RequestOpts): Promise<OctokitResponse<D>>
 }
 type HandleRequestOpts = {
   cache: CommandCache,
   limit: LimitLeft,
+  lines?: string[],
   status: number,
-  lines: string[]
 }
 interface HandleRequest {
   (o: HandleRequestOpts): SeekerOut;
@@ -166,6 +175,7 @@ function isInstallIn(a: OptIn): a is InstallIn {
 function handleError(e: unknown, d: InstallRaw): OctokitResponse<InstallRaw>;
 function handleError(e: unknown, d: HasBodies): OctokitResponse<HasBodies>;
 function handleError(e: unknown, d: HasBody): OctokitResponse<HasBody>;
+function handleError(e: unknown, d: null): OctokitResponse<null>;
 function handleError(e: unknown, d: Data): OctokitResponse<Data> {
   if (isRequestError(e) && isResponse(e.response)) {
     const { status, response } = e;
@@ -215,14 +225,66 @@ const requestRelease: RequestInterface<HasBody> = async ({ git, headers }) => {
   }
 }
 
+const toSafeSender: ToSafeSender = (opt) => {
+  const cache = toNewCache();
+  const { tries, unsafe } = opt;
+  const min_dt = 1000 * opt.delay;
+  return async (ctli: CommandTreeList) => {
+    for (let t = 0; t < tries; t++) {
+      const { status, headers } = await unsafe(ctli);
+      if ([200, 204].includes(status)) return;
+      const limit = readGitHubHeaders(headers);
+      const { delay } = handleRequest({ cache, limit, status });
+      const dt = Math.max(min_dt, 1000 * delay);
+      await new Promise(r => setTimeout(r, dt));
+    }
+    throw new Error(`Failed to send after ${tries} tries`);
+  }
+}
+
 const toSecretSender = (opt: SecretOut) => {
   const { git, env } = opt;
-  const sender: Sender = (ctli) => {
-    ctli.forEach(({ command, tree }) => {
-      setSecret({ command, tree, git, env });
-    })
+  const unsafe: UnsafeSender = async (ctli) => {
+    if (ctli.length !== 1) {
+      throw new Error("Each secret must have 1 command");
+    }
+    const { command, tree } = ctli[0];
+    try {
+      return await setSecret({ command, tree, git, env });
+    }
+    catch (e: unknown) {
+      return handleError(e, null);
+    }
   }
-  return sender;
+  const tries = opt.tries || 3;
+  const delay = opt.delay || 1;
+  const safer = toSafeSender({ tries, delay, unsafe });
+  return async (ctli: CommandTreeList) => {
+    await Promise.all(ctli.map(ct => safer([ct])));
+  }
+}
+
+const toDispatchSender = (opt: DispatchOut) => {
+  const { owner, repo, owner_token } = opt.git;
+  const headers = toHeaders(owner_token, true);
+  const { key, workflow: event_type } = opt;
+  const api = "/repos/{owner}/{repo}/dispatches";
+  const unsafe: UnsafeSender = async (ctli) => {
+    const text = fromCommandTreeList(ctli);
+    const client_payload = { [key]: text };
+    const opts = {
+      event_type, client_payload, owner, repo, headers
+    };
+    try {
+      return await request(`POST ${api}`, opts);
+    }
+    catch (e: unknown) {
+      return handleError(e, null);
+    }
+  }
+  const tries = opt.tries || 3;
+  const delay = opt.delay || 1;
+  return toSafeSender({ tries, delay, unsafe });
 }
 
 const toHeaders = (token: string, need_auth: boolean): Headers => {
@@ -236,25 +298,9 @@ const toHeaders = (token: string, need_auth: boolean): Headers => {
   return headers;
 }
 
-const toDispatchSender = (opt: DispatchOut) => {
-  const { owner, repo, owner_token } = opt.git;
-  const headers = toHeaders(owner_token, true);
-  const { key, workflow: event_type } = opt;
-  const api = "/repos/{owner}/{repo}/dispatches";
-  const sender: Sender = (ctli) => {
-    const text = fromCommandTreeList(ctli);
-    const client_payload = { [key]: text };
-    const opts = {
-      event_type, client_payload, owner, repo, headers
-    };
-    request(`POST ${api}`, opts);
-  }
-  return sender;
-}
-
 const toFileSender = (opt: FileOut) => {
   const { write } = opt; 
-  const sender: Sender = (ctli) => {
+  const sender: Sender = async (ctli) => {
     write(fromCommandTreeList(ctli));
   }
   return sender;
@@ -272,24 +318,26 @@ const readGitHubHeaders: ReadGitHubHeaders = (headers) => {
 }
 
 const handleRequest: HandleRequest = (opts) => {
-  const { cache, limit, status, lines } = opts;
-  if (status === 200) {
+  const { cache, limit, status } = opts;
+  const lines = opts.lines ? opts.lines : [];
+  if (status === 200 && lines !== undefined ) {
     cache.ctli = lines.reduce((ctli, line) => {
       return ctli.concat(toCommandTreeList(line));
     }, [] as CommandTreeList);
   }
-  else {
+  else if (![200, 204].includes(status)) {
     if (status === 403 && limit.count === 0) {
       const { minutes: m } = limit
       console.warn(`Fetch forbidden for ${m} min.`);
       return { ctli: cache.ctli, delay: m * 60 };
     }
-    else if (status === 304 || status === 500) {
+    else if ([304, 500].includes(status)) {
       // Existing cache is still valid
       const delay = toBiasedDelay(cache);
       return { ctli: cache.ctli, delay };
     }
-    const e = `HTTP Error ${status} in seeker`;
+    console.log({status, 'bad': 'bad'})
+    const e = `HTTP Error ${status}.`;
     throw new Error(e);
   }
   const new_count = limit.count > cache.count;
@@ -398,7 +446,7 @@ function toSender (opt: OptOut | null): Sender | null {
     return toDispatchSender(opt);
   }
   else if (isFileOut(opt)) {
-    return toFileSender(opt)
+    return toFileSender(opt);
   }
   throw new Error('Unable to configure sender.');
 }

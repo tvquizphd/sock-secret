@@ -90,11 +90,11 @@ class ClientChannel {
       this.waiters.set(command, { yes, no });
     })
   }
-  sendToServer(ctl: CommandTreeList) {
+  async sendToServer(ctl: CommandTreeList) {
     if (this.sender === null) {
       throw new Error("Can't send, no output configured.");
     }
-    this.sender([...this.preface, ...ctl]);
+    await this.sender([...this.preface, ...ctl]);
   }
   choose({ command, tree }: NameTree) {
     const choice = this.waiters.get(command);

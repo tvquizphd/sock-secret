@@ -6,7 +6,7 @@ import type { ClientOpts, ServerOpts } from "./util/channel";
 type OpId = string | undefined;
 
 export interface Sock {
-  give: (o: OpId, t: string, m: TreeAny) => void;
+  give: (o: OpId, t: string, m: TreeAny) => Promise<void>;
   get: (o: OpId, t: string) => Promise<TreeAny | undefined>;
 }
 export interface SockClient extends Sock {
@@ -36,7 +36,7 @@ const toSockServer: ToSockServer = async (opts) => {
       const k = toKey(op_id, tag);
       return channel.get(k);
     },
-    give: (op_id, tag, msg) => {
+    give: async (op_id, tag, msg) => {
       const k = toKey(op_id, tag);
       channel.addOutput(k, msg);
     },
@@ -53,10 +53,10 @@ const toSockClient: ToSockClient = async (opts) => {
       const command = toKey(op_id, tag);
       return channel.access(command);
     },
-    give: (op_id, tag, tree) => {
+    give: async (op_id, tag, tree) => {
       const command = toKey(op_id, tag);
       const ct = { command, tree };
-      channel.sendToServer([ ct ]);
+      await channel.sendToServer([ ct ]);
     },
     quit: () => {
       channel.finish();
