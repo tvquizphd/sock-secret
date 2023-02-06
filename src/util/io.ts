@@ -40,7 +40,7 @@ type DispatchOut = Partial<Timing> & {
   git: Git
 }
 type FileOut = {
-  write: (s: string) => unknown
+  write: (s: string) => Promise<void> 
 }
 export type OptOut = (
   SecretOut | DispatchOut | FileOut
@@ -301,7 +301,7 @@ const toHeaders = (token: string, need_auth: boolean): Headers => {
 const toFileSender = (opt: FileOut) => {
   const { write } = opt; 
   const sender: Sender = async (ctli) => {
-    write(fromCommandTreeList(ctli));
+    await write(fromCommandTreeList(ctli));
   }
   return sender;
 }

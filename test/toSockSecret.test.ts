@@ -34,7 +34,7 @@ describe("Write Secrets", () => {
   })
   it("Create Local Secret", async () => {
     let result = "";
-    const write = (text: string) => {  
+    const write = async (text: string) => {  
       result = text;
     }
     const delay = 1;
