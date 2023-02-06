@@ -184,7 +184,7 @@ function handleError(e: unknown, d: Data): OctokitResponse<Data> {
   }
   else if (isRequestError(e)) {
     const { status } = e;
-    const headers: Headers = {};
+    const headers: GitHubHeaders = {};
     return { url: "", status, headers, data: d };
   }
   throw e;
