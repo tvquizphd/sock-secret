@@ -10,9 +10,11 @@ export interface Sock {
   get: (o: OpId, t: string) => Promise<TreeAny | undefined>;
 }
 export interface SockClient extends Sock {
+  update: (o: Partial<ClientOpts>) => void;
   quit: () => void;
 }
 export interface SockServer extends Sock {
+  update: (o: Partial<ServerOpts>) => void;
   quit: () => CommandTreeList;
 }
 
@@ -32,6 +34,9 @@ const toKey = (op_id: OpId, tag: string) => {
 const toSockServer: ToSockServer = async (opts) => {
   const channel = new ServerChannel(opts);
   return {
+    update: (opts) => {
+      channel.update(opts);
+    },
     get: async (op_id, tag) => {
       const k = toKey(op_id, tag);
       return channel.get(k);
@@ -49,6 +54,9 @@ const toSockServer: ToSockServer = async (opts) => {
 const toSockClient: ToSockClient = async (opts) => {
   const channel = new ClientChannel(opts);
   return {
+    update: (opts) => {
+      return channel.update(opts);
+    },
     get: async (op_id, tag) => {
       const command = toKey(op_id, tag);
       return channel.access(command);
@@ -59,7 +67,7 @@ const toSockClient: ToSockClient = async (opts) => {
       await channel.sendToServer([ ct ]);
     },
     quit: () => {
-      channel.finish();
+      channel.finish('quit');
     }
   }
 }

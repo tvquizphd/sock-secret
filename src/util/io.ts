@@ -1,4 +1,5 @@
 import { setSecret } from "./secret";
+import { isObj } from "../b64url";
 import { request } from "@octokit/request";
 import { RequestError } from "@octokit/request-error";
 import { 
@@ -24,7 +25,8 @@ type SeekerOut = {
 }
 type Headers = {
   authorization?: string,
-  "If-None-Match"?: string
+  "If-None-Match"?: string,
+  "If-Modified-Since"?: string
 }
 type Timing = {
   tries: number,
@@ -80,14 +82,17 @@ interface ReadGitHubHeaders {
   (h: GitHubHeaders) : GitHubLimit;
 }
 type CommandCache = LimitLeft & {
-  ctli: CommandTreeList
+  ctli: CommandTreeList,
+  found?: boolean
 }
 type GitHubLimit = LimitLeft & {
+  since?: string,
   etag?: string
 }
 
 type GitHubHeaders = {
  'etag'?: string,
+ 'last-modified'?: string,
  'x-ratelimit-reset'?: string,
  'x-ratelimit-remaining'?: string 
 }
@@ -306,21 +311,26 @@ const toFileSender = (opt: FileOut) => {
   return sender;
 }
 
-const readGitHubHeaders: ReadGitHubHeaders = (headers) => {
+const readGitHubHeaders: ReadGitHubHeaders = (h) => {
   const when = new Date();
+  const since = 'last-modified'; 
   const basis = Math.floor(when.getTime() / 1000);
-  const reset = parseInt(headers['x-ratelimit-reset'] || '0');
-  const count = parseInt(headers['x-ratelimit-remaining'] || '0');
+  const reset = parseInt(h['x-ratelimit-reset'] || '0');
+  const count = parseInt(h['x-ratelimit-remaining'] || '0');
   const minutes = Math.max(toMinutes(reset) - toMinutes(basis), 0);
   const out : GitHubLimit = { when, count, minutes };
-  if ("etag" in headers) out.etag = headers.etag;
+  if (isObj(h) && h[since]) out.since = h[since];
+  if (isObj(h) && h.etag && !h.etag.match(/^W\//)) {
+    out.etag = h.etag;
+  }
   return out;
 }
 
 const handleRequest: HandleRequest = (opts) => {
   const { cache, limit, status } = opts;
   const lines = opts.lines ? opts.lines : [];
-  if (status === 200 && lines !== undefined ) {
+  if (status === 200) {
+    cache.found = true;
     cache.ctli = lines.reduce((ctli, line) => {
       return ctli.concat(toCommandTreeList(line));
     }, [] as CommandTreeList);
@@ -328,7 +338,6 @@ const handleRequest: HandleRequest = (opts) => {
   else if (!`${status}`.startsWith('2')) {
     if (status === 403 && limit.count === 0) {
       const { minutes: m } = limit
-      console.warn(`Fetch forbidden for ${m} min.`);
       return { ctli: cache.ctli, delay: m * 60 };
     }
     else if ([304, 500].includes(status)) {
@@ -362,10 +371,14 @@ const toReleaseSeeker = (opt: ReleaseIn) => {
   const { owner_token } = git;
   const cache = toNewCache();
   const no = "If-None-Match";
+  const since = "If-Modified-Since";
   const headers = toHeaders(owner_token, false);
   const seeker: Seeker = async () => {
     const result = await requestRelease({ git, headers });
     const limit = readGitHubHeaders(result.headers);
+    if (cache.found && limit.since) {
+      headers[since] = limit.since;
+    }
     if ('etag' in limit) headers[no] = limit.etag;
     else delete headers[no];
     const { status, data } = result;

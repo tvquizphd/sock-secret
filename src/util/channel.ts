@@ -49,22 +49,29 @@ class ClientChannel {
   ins: CommandMap;
 
   constructor(opts: ClientOpts) {
-    this.dt = (opts.delay || 1) * 1000;
-    this.sender = toSender(opts.output || null);
-    this.seeker = toSeeker(opts.input || null);
-    this.mapper = opts.mapper || noMapper;
-    this.preface = opts.preface || [];
-    this.done = this.seeker === null;
+    this.done = false;
+    this.preface = [];
+    this.sender = null;
+    this.seeker = null;
+    this.mapper = noMapper;
     this.waiters = new Map();
     this.ins = new Map();
-    this.done = false;
+    this.dt = 1000;
+    this.update(opts);
     this.seek();
   }
-
+  update(opts: Partial<ClientOpts>) {
+    if (opts.output) this.sender = toSender(opts.output);
+    if (opts.input) this.seeker = toSeeker(opts.input);
+    if (opts.preface) this.preface = opts.preface;
+    if (opts.delay) this.dt = opts.delay * 1000;
+    if (opts.mapper) this.mapper = opts.mapper;
+    this.done = this.seeker === null;
+  }
   async seek() {
     while (!this.done && this.seeker !== null) {
-      const {delay, ctli} = await this.seeker();
-      const ctl = await this.mapper(ctli);
+      const {delay, ctli} = await this.trySeeker();
+      const ctl = await this.tryMapper(ctli);
       ctl.forEach(({ command, tree }) => {
         this.ins.set(command, tree);
         this.choose({ command, tree });
@@ -72,6 +79,29 @@ class ClientChannel {
       const dt = Math.max(delay * 1000, this.dt);
       await new Promise(r => setTimeout(r, dt));
     }
+  }
+  async trySeeker () {
+    try {
+      if (this.seeker === null) {
+        throw new Error("Can't seek, no input configured.");
+      }
+      return await this.seeker();
+    }
+    catch (e) {
+      this.finish(e instanceof Error ? e.message : 'seeker');
+    }
+    const delay = Math.round(this.dt / 1000);
+    const ctli: CommandTreeList = [];
+    return { delay, ctli };
+  }
+  async tryMapper (ctli: CommandTreeList) {
+    try {
+      return await this.mapper(ctli);
+    }
+    catch (e) {
+      this.finish(e instanceof Error ? e.message : 'mapper');
+    }
+    return [] as CommandTreeList;
   }
   has(command: string): boolean {
     return this.ins.has(command);
@@ -83,7 +113,7 @@ class ClientChannel {
   }
   wait(command: string) {
     return new Promise((yes: Fn, no: EFn) => {
-      console.log(`Awaiting ${command}`);
+      console.log(`Sock: seeking ${command}`);
       if (this.waiters.has(command)) {
         no(new Error(`Duplicate ${command} getter.`));
       }
@@ -109,21 +139,21 @@ class ClientChannel {
     }
     if (this.has(command)) {
       const tree = this.get(command);
-      console.log(`Resolving ${command}`);
+      console.log(`Sock: found ${command}`);
       this.choose({ command, tree });
       return tree;
     }
     return this.wait(command);
   }
-  finish() {
+  finish(msg: string) {
     this.done = true;
     const keys = this.waiters.keys();
     [...keys].forEach((command: string) => {
       const choice = this.waiters.get(command)
       if (choice) {
         this.waiters.delete(command);
-        const msg = `Unable to resolve ${command}.`;
-        return choice.no(new Error(msg));
+        const m = `Sock: ${command}: ${msg}.`;
+        return choice.no(new Error(m));
       }
     });
   }
@@ -135,8 +165,12 @@ class ServerChannel {
   outs: CommandMap;
 
   constructor(opts: ServerOpts) {
-    this.ins = parseTree(opts.inputs);
     this.outs = new Map();
+    this.ins = new Map();
+    this.update(opts);
+  }
+  update(opts: Partial<ServerOpts>) {
+    if (opts.inputs) this.ins = parseTree(opts.inputs);
   }
   has(command: string): boolean {
     return this.ins.has(command);
