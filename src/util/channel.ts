@@ -130,6 +130,7 @@ class ClientChannel {
     const choice = this.waiters.get(command);
     if (choice) {
       this.waiters.delete(command);
+      this.ins.delete(command);
       return choice.yes(tree);
     }
   }
