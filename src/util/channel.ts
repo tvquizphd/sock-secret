@@ -46,7 +46,6 @@ class ClientChannel {
   mapper: Mapper;
   done: boolean;
   dt: number;
-  ins: CommandMap;
 
   constructor(opts: ClientOpts) {
     this.done = false;
@@ -55,7 +54,6 @@ class ClientChannel {
     this.seeker = null;
     this.mapper = noMapper;
     this.waiters = new Map();
-    this.ins = new Map();
     this.dt = 1000;
     this.update(opts);
     this.seek();
@@ -73,7 +71,6 @@ class ClientChannel {
       const {delay, ctli} = await this.trySeeker();
       const ctl = await this.tryMapper(ctli);
       ctl.forEach(({ command, tree }) => {
-        this.ins.set(command, tree);
         this.choose({ command, tree });
       });
       const dt = Math.max(delay * 1000, this.dt);
@@ -103,14 +100,6 @@ class ClientChannel {
     }
     return [] as CommandTreeList;
   }
-  has(command: string): boolean {
-    return this.ins.has(command);
-  }
-  get(command: string): TreeAny {
-    const tree = this.ins.get(command);
-    if (tree) return tree;
-    throw new Error(`Missing ${command}`);
-  }
   wait(command: string) {
     return new Promise((yes: Fn, no: EFn) => {
       console.log(`Sock: seeking ${command}`);
@@ -130,19 +119,12 @@ class ClientChannel {
     const choice = this.waiters.get(command);
     if (choice) {
       this.waiters.delete(command);
-      this.ins.delete(command);
       return choice.yes(tree);
     }
   }
   async access(command: string): Promise<TreeAny> {
     if (this.seeker === null) {
       throw new Error("Can't access, no input configured.");
-    }
-    if (this.has(command)) {
-      const tree = this.get(command);
-      console.log(`Sock: found ${command}`);
-      this.choose({ command, tree });
-      return tree;
     }
     return this.wait(command);
   }
