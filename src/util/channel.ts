@@ -43,6 +43,7 @@ const toNewUTC = () => {
   return new Date().toUTCString();
 }
 
+const SINCE = 'last-modified' as const;
 class ClientChannel {
 
   waiters: Map<string, Choice>;
@@ -61,7 +62,7 @@ class ClientChannel {
     this.seeker = null;
     this.mapper = noMapper;
     this.persist = {
-      'last-modified': toNewUTC() 
+      [SINCE]: toNewUTC() 
     };
     this.waiters = new Map();
     this.dt = 1000;
@@ -81,7 +82,12 @@ class ClientChannel {
   }
   async seek() {
     while (!this.done && this.seeker !== null) {
-      const {delay, ctli} = await this.trySeeker();
+      const seeker_out = await this.trySeeker();
+      const { delay, ctli } = seeker_out;
+      if (SINCE in seeker_out && seeker_out[SINCE]) {
+        const since = seeker_out[SINCE];
+        this.persist[SINCE] = since;
+      }
       const ctl = await this.tryMapper(ctli);
       ctl.forEach(({ command, tree }) => {
         this.choose({ command, tree });
