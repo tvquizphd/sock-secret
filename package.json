@@ -1,6 +1,6 @@
 {
   "name": "sock-secret",
-  "version": "6.3.0",
+  "version": "6.4.0",
   "description": "Socket connection for GitHub Secrets",
   "homepage": "https://github.com/tvquizphd/sock-secret",
   "main": "./dist/index.js",

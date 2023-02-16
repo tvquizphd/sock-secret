@@ -1,10 +1,13 @@
 import { toSender, toSeeker } from "./io";
 
 import type { TreeAny, NameTree, CommandTreeList } from "../b64url/index";
-import type { Seeker, Sender } from "./io";
+import type { Seeker, Sender, Persist } from "./io";
 import type { OptOut, OptIn } from "./io";
 
+export type ClientResult = Persist;
+
 export type ClientOpts = {
+  persist?: Partial<Persist>,
   preface?: CommandTreeList,
   mapper?: Mapper,
   output?: OptOut,
@@ -36,6 +39,9 @@ const parseTree: ParseTree = (ctl) => {
 }
 
 const noMapper: Mapper = (ctl) => ctl;
+const toNewUTC = () => {
+  return new Date().toUTCString();
+}
 
 class ClientChannel {
 
@@ -43,6 +49,7 @@ class ClientChannel {
   preface: CommandTreeList;
   sender: Sender | null;
   seeker: Seeker | null;
+  persist: Persist;
   mapper: Mapper;
   done: boolean;
   dt: number;
@@ -53,12 +60,18 @@ class ClientChannel {
     this.sender = null;
     this.seeker = null;
     this.mapper = noMapper;
+    this.persist = {
+      'last-modified': toNewUTC() 
+    };
     this.waiters = new Map();
     this.dt = 1000;
     this.update(opts);
     this.seek();
   }
   update(opts: Partial<ClientOpts>) {
+    if (opts.persist) {
+      this.persist = { ...this.persist, ...opts.persist };
+    }
     if (opts.output) this.sender = toSender(opts.output);
     if (opts.input) this.seeker = toSeeker(opts.input);
     if (opts.preface) this.preface = opts.preface;
@@ -139,6 +152,7 @@ class ClientChannel {
         return choice.no(new Error(m));
       }
     });
+    return this.persist;
   }
 }
 

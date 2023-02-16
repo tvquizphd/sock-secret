@@ -2,6 +2,7 @@ import { ServerChannel, ClientChannel } from "./util/channel";
 
 import type { TreeAny, CommandTreeList } from "./b64url/index";
 import type { ClientOpts, ServerOpts } from "./util/channel";
+import type { ClientResult } from "./util/channel";
 
 type OpId = string | undefined;
 
@@ -11,7 +12,7 @@ export interface Sock {
 }
 export interface SockClient extends Sock {
   update: (o: Partial<ClientOpts>) => void;
-  quit: () => void;
+  quit: () => ClientResult;
 }
 export interface SockServer extends Sock {
   update: (o: Partial<ServerOpts>) => void;
@@ -67,7 +68,7 @@ const toSockClient: ToSockClient = async (opts) => {
       await channel.sendToServer([ ct ]);
     },
     quit: () => {
-      channel.finish('quit');
+      return channel.finish('quit');
     }
   }
 }

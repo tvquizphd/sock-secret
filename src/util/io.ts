@@ -19,7 +19,11 @@ interface UnsafeSender {
 }
 export type Sender = (ns: CommandTreeList) => Promise<void>;
 export type Seeker = () => Promise<SeekerOut>;
-type SeekerOut = {
+
+export type Persist = {
+  'last-modified': string
+}
+type SeekerOut = Partial<Persist> & {
   ctli: CommandTreeList,
   delay: number 
 }
@@ -71,9 +75,12 @@ interface RequestInterface<D> {
 }
 type HandleRequestOpts = {
   cache: CommandCache,
-  limit: LimitLeft,
+  limit: GitHubLimit,
   lines?: string[],
   status: number,
+}
+interface ToResult {
+  (c: CommandTreeList, l: GitHubLimit, n: number): SeekerOut;
 }
 interface HandleRequest {
   (o: HandleRequestOpts): SeekerOut;
@@ -329,6 +336,14 @@ const readGitHubHeaders: ReadGitHubHeaders = (h) => {
 const handleRequest: HandleRequest = (opts) => {
   const { cache, limit, status } = opts;
   const lines = opts.lines ? opts.lines : [];
+  const toResult: ToResult = (ctli, limit, delay) => {
+    const out: SeekerOut = { ctli, delay };
+    if ('since' in limit) {
+      const since = 'last-modified'; 
+      out[since] = limit.since;
+    }
+    return out;
+  }
   if (status === 200) {
     cache.found = true;
     cache.ctli = lines.reduce((ctli, line) => {
@@ -338,12 +353,12 @@ const handleRequest: HandleRequest = (opts) => {
   else if (!`${status}`.startsWith('2')) {
     if (status === 403 && limit.count === 0) {
       const { minutes: m } = limit
-      return { ctli: cache.ctli, delay: m * 60 };
+      return toResult(cache.ctli, limit, m*60);
     }
     else if ([304, 500].includes(status)) {
       // Existing cache is still valid
       const delay = toBiasedDelay(cache);
-      return { ctli: cache.ctli, delay };
+      return toResult(cache.ctli, limit, delay);
     }
     const e = `HTTP Error ${status}.`;
     throw new Error(e);
