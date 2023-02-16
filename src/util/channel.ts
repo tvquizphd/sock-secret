@@ -101,7 +101,7 @@ class ClientChannel {
       if (this.seeker === null) {
         throw new Error("Can't seek, no input configured.");
       }
-      return await this.seeker();
+      return await this.seeker(this.persist);
     }
     catch (e) {
       this.finish(e instanceof Error ? e.message : 'seeker');

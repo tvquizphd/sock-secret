@@ -18,8 +18,9 @@ interface UnsafeSender {
   (ns: CommandTreeList): Promise<OctokitResponse<unknown>>
 }
 export type Sender = (ns: CommandTreeList) => Promise<void>;
-export type Seeker = () => Promise<SeekerOut>;
+export type Seeker = (p: Persist) => Promise<SeekerOut>;
 
+const SINCE = 'last-modified' as const;
 export type Persist = {
   'last-modified': string
 }
@@ -339,8 +340,7 @@ const handleRequest: HandleRequest = (opts) => {
   const toResult: ToResult = (ctli, limit, delay) => {
     const out: SeekerOut = { ctli, delay };
     if ('since' in limit) {
-      const since = 'last-modified'; 
-      out[since] = limit.since;
+      out[SINCE] = limit.since;
     }
     return out;
   }
@@ -388,11 +388,14 @@ const toReleaseSeeker = (opt: ReleaseIn) => {
   const no = "If-None-Match";
   const since = "If-Modified-Since";
   const headers = toHeaders(owner_token, false);
-  const seeker: Seeker = async () => {
+  const seeker: Seeker = async (persist) => {
     const result = await requestRelease({ git, headers });
     const limit = readGitHubHeaders(result.headers);
     if (cache.found && limit.since) {
       headers[since] = limit.since;
+    }
+    else if (SINCE in persist) {
+      headers[since] = persist[SINCE];
     }
     if ('etag' in limit) headers[no] = limit.etag;
     else delete headers[no];
@@ -408,10 +411,17 @@ const toIssuesSeeker = (opt: IssuesIn) => {
   const { owner_token } = git;
   const cache = toNewCache();
   const no = "If-None-Match";
+  const since = "If-Modified-Since";
   const headers = toHeaders(owner_token, false);
-  const seeker: Seeker = async () => {
+  const seeker: Seeker = async (persist) => {
     const result = await requestIssues({ git, headers });
     const limit = readGitHubHeaders(result.headers);
+    if (cache.found && limit.since) {
+      headers[since] = limit.since;
+    }
+    else if (SINCE in persist) {
+      headers[since] = persist[SINCE];
+    }
     if ('etag' in limit) headers[no] = limit.etag;
     else delete headers[no];
     const { status, data } = result;
